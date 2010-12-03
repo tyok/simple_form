@@ -132,6 +132,8 @@ module SimpleForm
           attribute = @reflection.options[:foreign_key] || :"#{@reflection.name}_id"
         when :has_one
           raise ":has_one association are not supported by f.association"
+        when :embeds_many
+          attribute = :"#{@reflection.name.to_s.pluralize}"
         else
           attribute = :"#{@reflection.name.to_s.singularize}_ids"
 

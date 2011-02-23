@@ -1,7 +1,5 @@
 require 'rubygems'
-require 'bundler'
-
-Bundler.setup
+require 'bundler/setup'
 
 require 'test/unit'
 require 'mocha'
@@ -10,6 +8,9 @@ require 'active_model'
 require 'action_controller'
 require 'action_view'
 require 'action_view/template'
+
+# Rails 3.0.4 is missing this "deprecation" require.
+require 'active_support/core_ext/module/deprecation'
 require 'action_view/test_case'
 
 $:.unshift File.expand_path("../../lib", __FILE__)
@@ -25,10 +26,6 @@ if File.exists?(country_select)
   require 'country_select'
 else
   raise "Could not find country_select plugin in test/support. Please execute git submodule update --init."
-end
-
-class SimpleForm::FormBuilder
-  attr_accessor :reflection, :options
 end
 
 class ActionView::TestCase

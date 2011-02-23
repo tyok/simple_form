@@ -8,7 +8,7 @@ class LabelTest < ActionView::TestCase
 
   def with_label_for(object, attribute_name, type, options={})
     with_concat_form_for(object) do |f|
-      f.reflection = Association.new(Company, :company, {}) if options.delete(:setup_association)
+      options[:reflection] = Association.new(Company, :company, {}) if options.delete(:setup_association)
       SimpleForm::Inputs::Base.new(f, attribute_name, nil, type, options).label
     end
   end
@@ -96,6 +96,43 @@ class LabelTest < ActionView::TestCase
     end
   end
 
+  test 'label should do correct i18n lookup for nested models with nested translation' do
+    @user.company = Company.new(1, 'Empresa')
+
+    store_translations(:en, :simple_form => { :labels => {
+      :user => { :name => 'Usuario', :company => { :name => 'Nome da empresa' } }
+    } } ) do
+      with_concat_form_for @user do |f|
+        concat f.input :name
+        concat(f.simple_fields_for :company do |company_form|
+          concat company_form.input :name
+        end)
+      end
+
+      assert_select 'label[for=user_name]', /Usuario/
+      assert_select 'label[for=user_company_attributes_name]', /Nome da empresa/
+    end
+  end
+
+  test 'label should do correct i18n lookup for nested models with no nested translation' do
+    @user.company = Company.new(1, 'Empresa')
+
+    store_translations(:en, :simple_form => { :labels => {
+      :user    => { :name => 'Usuario' },
+      :company => { :name => 'Nome da empresa' }
+    } } ) do
+      with_concat_form_for @user do |f|
+        concat f.input :name
+        concat(f.simple_fields_for :company do |company_form|
+          concat company_form.input :name
+        end)
+      end
+
+      assert_select 'label[for=user_name]', /Usuario/
+      assert_select 'label[for=user_company_attributes_name]', /Nome da empresa/
+    end
+  end
+
   test 'label should have css class from type' do
     with_label_for @user, :name, :string
     assert_select 'label.string'
@@ -170,6 +207,16 @@ class LabelTest < ActionView::TestCase
     assert_select 'label[for=my_new_id]'
   end
 
+  test 'label should allow overwriting of for attribute' do
+    with_label_for @user, :name, :string, :label_html => { :for => 'my_new_id' }
+    assert_select 'label[for=my_new_id]'
+  end
+
+  test 'label should allow overwriting of for attribute with input_html not containing id' do
+    with_label_for @user, :name, :string, :label_html => { :for => 'my_new_id' }, :input_html => {:class => 'foo'}
+    assert_select 'label[for=my_new_id]'
+  end
+
   test 'label should use default input id when it was not overridden' do
     with_label_for @user, :name, :string, :input_html => { :class => 'my_new_id' }
     assert_select 'label[for=user_name]'
@@ -194,5 +241,12 @@ class LabelTest < ActionView::TestCase
     assert_select 'label.required[for=project_name]'
     with_label_for :project, :description, :string, :required => false
     assert_no_select 'label.required[for=project_description]'
+  end
+
+  test 'label should add chosen label class' do
+    swap SimpleForm, :label_class => :my_custom_class do
+      with_label_for @user, :name, :string
+      assert_select 'label.my_custom_class'
+    end
   end
 end

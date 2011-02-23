@@ -36,8 +36,8 @@ module SimpleForm
       end
 
       def label_html_options
-        label_options = html_options_for(:label, [input_type, required_class])
-        label_options[:for] = options[:input_html][:id] if options.key?(:input_html)
+        label_options = html_options_for(:label, [input_type, required_class, SimpleForm.label_class])
+        label_options[:for] = options[:input_html][:id] if options.key?(:input_html) && options[:input_html].key?(:id)
         label_options
       end
 
@@ -52,7 +52,7 @@ module SimpleForm
         attribute_required? ? self.class.translate_required_html.dup : ''
       end
 
-      # First check human attribute name and then labels.
+      # First check labels translation and then human attribute name.
       def label_translation #:nodoc:
         translate(:labels) || if object.class.respond_to?(:human_attribute_name)
           object.class.human_attribute_name(reflection_or_attribute_name.to_s)

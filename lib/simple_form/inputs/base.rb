@@ -15,19 +15,22 @@ module SimpleForm
       include SimpleForm::Components::Placeholders
       include SimpleForm::Components::Wrapper
 
-      attr_reader :attribute_name, :column, :input_type, :options, :input_html_options
+      attr_reader :attribute_name, :column, :input_type, :reflection,
+                  :options, :input_html_options
 
-      delegate :template, :object, :object_name, :reflection, :to => :@builder
+      delegate :template, :object, :object_name, :to => :@builder
 
       def initialize(builder, attribute_name, column, input_type, options = {})
         @builder            = builder
         @attribute_name     = attribute_name
         @column             = column
         @input_type         = input_type
+        @reflection         = options.delete(:reflection)
         @options            = options
         @input_html_options = html_options_for(:input, input_html_classes).tap do |o|
-          o[:required] = true if attribute_required?
-          o[:disabled] = true if disabled?
+          o[:required]  = true if has_required?
+          o[:disabled]  = true if disabled?
+          o[:autofocus] = true if has_autofocus?
         end
       end
 
@@ -69,8 +72,17 @@ module SimpleForm
         end
       end
 
+      # Whether this input is valid for HTML 5 required attribute.
+      def has_required?
+        attribute_required?
+      end
+
+      def has_autofocus?
+        options[:autofocus]
+      end
+
       def has_validators?
-        object.class.respond_to?(:validators_on)
+        attribute_name && object.class.respond_to?(:validators_on)
       end
 
       def attribute_validators
@@ -118,6 +130,15 @@ module SimpleForm
       #  Action is the action being rendered, usually :new or :edit.
       #  And attribute is the attribute itself, :name for example.
       #
+      #  The lookup for nested attributes is also done in a nested format using
+      #  both model and nested object names, such as follow:
+      #
+      #   simple_form.{namespace}.{model}.{nested}.{action}.{attribute}
+      #   simple_form.{namespace}.{model}.{nested}.{attribute}
+      #   simple_form.{namespace}.{nested}.{action}.{attribute}
+      #   simple_form.{namespace}.{nested}.{attribute}
+      #   simple_form.{namespace}.{attribute}
+      #
       #  Example:
       #
       #    simple_form:
@@ -131,12 +152,34 @@ module SimpleForm
       #  Take a look at our locale example file.
       def translate(namespace, default='')
         return nil unless SimpleForm.translate
-        lookups = []
-        lookups << :"#{object_name}.#{lookup_action}.#{reflection_or_attribute_name}"
-        lookups << :"#{object_name}.#{reflection_or_attribute_name}"
+
+        model_names = lookup_model_names
+        lookups     = []
+
+        while !model_names.empty?
+          joined_model_names = model_names.join(".")
+          model_names.shift
+
+          lookups << :"#{joined_model_names}.#{lookup_action}.#{reflection_or_attribute_name}"
+          lookups << :"#{joined_model_names}.#{reflection_or_attribute_name}"
+        end
         lookups << :"#{reflection_or_attribute_name}"
         lookups << default
+
         I18n.t(lookups.shift, :scope => :"simple_form.#{namespace}", :default => lookups).presence
+      end
+
+      # Extract the model names from the object_name mess.
+      #
+      # Example:
+      #
+      # route[blocks_attributes][0][blocks_learning_object_attributes][1][foo_attributes]
+      # ["route", "blocks", "blocks_learning_object", "foo"]
+      #
+      def lookup_model_names
+        object_name.to_s.scan(/([a-zA-Z_]+)/).flatten.map do |x|
+          x.gsub('_attributes', '')
+        end
       end
 
       # The action to be used in lookup.

@@ -9,6 +9,12 @@ class FormBuilderTest < ActionView::TestCase
     end
   end
 
+  def with_custom_form_for(object, *args, &block)
+    with_concat_custom_form_for(object) do |f|
+      f.input(*args, &block)
+    end
+  end
+
   def with_button_for(object, *args)
     with_concat_form_for(object) do |f|
       f.button(*args)
@@ -70,11 +76,27 @@ class FormBuilderTest < ActionView::TestCase
     end
   end
 
+  test 'builder should allow adding custom input mappings for integer input types' do
+    swap SimpleForm, :input_mappings => { /lock_version/ => :hidden } do
+      with_form_for @user, :lock_version
+      assert_no_select 'form input#user_lock_version.integer'
+      assert_select 'form input#user_lock_version.hidden'
+    end
+  end
+
   test 'builder uses the first matching custom input map when more than one match' do
     swap SimpleForm, :input_mappings => { /count$/ => :integer, /^post_/ => :password } do
       with_form_for @user, :post_count
       assert_no_select 'form input#user_post_count.password'
       assert_select 'form input#user_post_count.numeric.integer'
+    end
+  end
+
+  test 'builder uses the custom map only for matched attributes' do
+    swap SimpleForm, :input_mappings => { /lock_version/ => :hidden } do
+      with_form_for @user, :post_count
+      assert_no_select 'form input#user_post_count.hidden'
+      assert_select 'form input#user_post_count.string'
     end
   end
 
@@ -162,6 +184,14 @@ class FormBuilderTest < ActionView::TestCase
 
     with_form_for @user, :avatar
     assert_select 'form input#user_avatar.file'
+  end
+
+  test 'builder should generate file for attributes that are real db columns but have file methods' do
+    @user.home_picture = mock("file")
+    @user.home_picture.expects(:respond_to?).with(:mounted_as).returns(true)
+
+    with_form_for @user, :home_picture
+    assert_select 'form input#user_home_picture.file'
   end
 
   test 'build should generate select if a collection is given' do
@@ -371,6 +401,11 @@ class FormBuilderTest < ActionView::TestCase
     assert_select 'span.error', "can't be blank"
   end
 
+  test 'builder should generate an error tag with a clean HTML' do
+    with_error_for @user, :name
+    assert_no_select 'span.error[error_html]'
+  end
+
   test 'builder should allow passing options to error tag' do
     with_error_for @user, :name, :id => 'name_error'
     assert_select 'span.error#name_error', "can't be blank"
@@ -384,9 +419,20 @@ class FormBuilderTest < ActionView::TestCase
     end
   end
 
+  test 'builder should generate a hint component tag for the given text for a model with ActiveModel::Validations' do
+    with_hint_for @validating_user, 'Hello World!'
+    assert_select 'span.hint', 'Hello World!'
+  end
+
   test 'builder should generate a hint component tag for the given text' do
     with_hint_for @user, 'Hello World!'
     assert_select 'span.hint', 'Hello World!'
+  end
+
+  test 'builder should generate a hint componet tag with a clean HTML' do
+    with_hint_for @validating_user, 'Hello World!'
+    assert_no_select 'span.hint[hint]'
+    assert_no_select 'span.hint[hint_html]'
   end
 
   test 'builder should allow passing options to hint tag' do
@@ -398,6 +444,11 @@ class FormBuilderTest < ActionView::TestCase
   test 'builder should generate a label for the attribute' do
     with_label_for @user, :name
     assert_select 'label.string[for=user_name]', /Name/
+  end
+
+  test 'builder should generate a label componet tag with a clean HTML' do
+    with_label_for @user, :name
+    assert_no_select 'label.string[label_html]'
   end
 
   test 'builder should add a required class to label if the attribute is required' do
@@ -561,5 +612,11 @@ class FormBuilderTest < ActionView::TestCase
 
     assert_select 'form ul', :count => 1
     assert_select 'form ul li', :count => 3
+  end
+
+  # CUSTOM FORM BUILDER
+  test 'custom builder should inherit mappings' do
+    with_custom_form_for @user, :email
+    assert_select 'form input[type=email]#user_email.custom'
   end
 end

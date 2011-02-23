@@ -1,6 +1,6 @@
 module SimpleForm
   class FormBuilder < ActionView::Helpers::FormBuilder
-    attr_reader :template, :object_name, :object, :reflection, :options
+    attr_reader :template, :object_name, :object
 
     extend MapType
     include SimpleForm::Inputs
@@ -79,8 +79,8 @@ module SimpleForm
     # given SimpleForm.time_zone_priority and SimpleForm.country_priority are used respectivelly.
     #
     def input(attribute_name, options={}, &block)
-      column      = find_attribute_column(attribute_name)
-      input_type  = default_input_type(attribute_name, column, options)
+      column     = find_attribute_column(attribute_name)
+      input_type = default_input_type(attribute_name, column, options)
 
       if block_given?
         SimpleForm::Inputs::BlockInput.new(self, attribute_name, column, input_type, options, &block).render
@@ -123,38 +123,38 @@ module SimpleForm
 
       raise ArgumentError, "Association cannot be used in forms not associated with an object" unless @object
 
-      options[:as] ||= :select
-      @reflection = find_association_reflection(association)
-      raise "Association #{association.inspect} not found" unless @reflection
+      reflection = find_association_reflection(association)
+      raise "Association #{association.inspect} not found" unless reflection
 
-      case @reflection.macro
+      options[:as] ||= :select
+      options[:collection] ||= reflection.klass.all(reflection.options.slice(:conditions, :order))
+
+      attribute = case reflection.macro
         when :belongs_to, :referenced_in
-          attribute = @reflection.options[:foreign_key] || :"#{@reflection.name}_id"
+          reflection.options[:foreign_key] || :"#{reflection.name}_id"
         when :has_one
           raise ":has_one association are not supported by f.association"
         when :embeds_many
-          attribute = :"#{@reflection.name.to_s.pluralize}"
+          :"#{@reflection.name.to_s.pluralize}"
         when :embeds_one
-          attribute = :"#{@reflection.name.to_s.singularize}"
+          :"#{@reflection.name.to_s.singularize}"
         when :references_many
-          attribute = (@reflection.options[:stored_as] == :array) ?
+          (@reflection.options[:stored_as] == :array) ?
             :"#{@reflection.name.to_s.singularize}_ids" :
             :"#{@reflection.name.to_s.pluralize}"
         when :references_one
-            attribute = :"#{@reflection.name.to_s.singularize}_id"
+            :"#{@reflection.name.to_s.singularize}_id"
         else
-          attribute = :"#{@reflection.name.to_s.singularize}_ids"
-
           if options[:as] == :select
             html_options = options[:input_html] ||= {}
             html_options[:size]   ||= 5
             html_options[:multiple] = true unless html_options.key?(:multiple)
           end
+
+          :"#{reflection.name.to_s.singularize}_ids"
       end
 
-      options[:collection] ||= @reflection.klass.all(@reflection.options.slice(:conditions, :order))
-
-      input(attribute, options).tap { @reflection = nil }
+      input(attribute, options.merge(:reflection => reflection))
     end
 
     # Creates a button:
@@ -185,7 +185,7 @@ module SimpleForm
     #    f.error :name, :id => "cool_error"
     #
     def error(attribute_name, options={})
-      options[:error_html] = options
+      options[:error_html] = options.dup
       column      = find_attribute_column(attribute_name)
       input_type  = default_input_type(attribute_name, column, options)
       SimpleForm::Inputs::Base.new(self, attribute_name, column, input_type, options).error
@@ -202,7 +202,7 @@ module SimpleForm
     #    f.hint "Don't forget to accept this"
     #
     def hint(attribute_name, options={})
-      options[:hint_html] = options
+      options[:hint_html] = options.dup
       if attribute_name.is_a?(String)
         options[:hint] = attribute_name
         attribute_name, column, input_type = nil, nil, nil
@@ -229,8 +229,8 @@ module SimpleForm
     def label(attribute_name, *args)
       return super if args.first.is_a?(String)
       options = args.extract_options!
+      options[:label_html] = options.dup
       options[:label]      = options.delete(:label)
-      options[:label_html] = options
       options[:required]   = options.delete(:required)
       column      = find_attribute_column(attribute_name)
       input_type  = default_input_type(attribute_name, column, options)
@@ -260,47 +260,49 @@ module SimpleForm
     def default_input_type(attribute_name, column, options) #:nodoc:
       return options[:as].to_sym if options[:as]
       return :select             if options[:collection]
+      custom_type = find_custom_type(attribute_name.to_s) and return custom_type
 
       input_type = column.try(:type)
-
       case input_type
-        when :timestamp
-          :datetime
-        when :string, nil
-          match = case attribute_name.to_s
-            when /password/  then :password
-            when /time_zone/ then :time_zone
-            when /country/   then :country
-            when /email/     then :email
-            when /phone/     then :tel
-            when /url/       then :url
-            else
-              SimpleForm.input_mappings.find { |match, type|
-                attribute_name.to_s =~ match
-              }.try(:last) if SimpleForm.input_mappings
-          end
-
-          match || input_type || file_method?(attribute_name) || :string
+      when :timestamp
+        :datetime
+      when :string, nil
+        case attribute_name.to_s
+        when /password/  then :password
+        when /time_zone/ then :time_zone
+        when /country/   then :country
+        when /email/     then :email
+        when /phone/     then :tel
+        when /url/       then :url
         else
-          input_type
+          file_method?(attribute_name) ? :file : (input_type || :string)
+        end
+      else
+        input_type
       end
     end
 
-    # Checks if attribute is a file_method.
+    def find_custom_type(attribute_name) #:nodoc:
+      SimpleForm.input_mappings.find { |match, type|
+        attribute_name =~ match
+      }.try(:last) if SimpleForm.input_mappings
+    end
+
     def file_method?(attribute_name) #:nodoc:
       file = @object.send(attribute_name) if @object.respond_to?(attribute_name)
-      :file if file && SimpleForm.file_methods.any? { |m| file.respond_to?(m) }
+      file && SimpleForm.file_methods.any? { |m| file.respond_to?(m) }
     end
 
-    # Finds the database column for the given attribute
     def find_attribute_column(attribute_name) #:nodoc:
-      @object.column_for_attribute(attribute_name) if @object.respond_to?(:column_for_attribute)
+      if @object.respond_to?(:column_for_attribute)
+        @object.column_for_attribute(attribute_name)
+      end
     end
 
-    # Find reflection related to association
     def find_association_reflection(association) #:nodoc:
-      @object.class.reflect_on_association(association) if @object.class.respond_to?(:reflect_on_association)
+      if @object.class.respond_to?(:reflect_on_association)
+        @object.class.reflect_on_association(association)
+      end
     end
-
   end
 end

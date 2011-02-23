@@ -62,6 +62,41 @@ class InputTest < ActionView::TestCase
     assert_select 'select.datetime:not([disabled])'
   end
 
+  test 'input should generate autofocus attribute based on the autofocus option' do
+    with_input_for @user, :name, :string, :autofocus => true
+    assert_select 'input.string[autofocus]'
+    with_input_for @user, :description, :text, :autofocus => true
+    assert_select 'textarea.text[autofocus]'
+    with_input_for @user, :age, :integer, :autofocus => true
+    assert_select 'input.integer[autofocus]'
+    with_input_for @user, :born_at, :date, :autofocus => true
+    assert_select 'select.date[autofocus]'
+    with_input_for @user, :created_at, :datetime, :autofocus => true
+    assert_select 'select.datetime[autofocus]'
+
+    with_input_for @user, :name, :string, :autofocus => false
+    assert_select 'input.string:not([autofocus])'
+    with_input_for @user, :description, :text, :autofocus => false
+    assert_select 'textarea.text:not([autofocus])'
+    with_input_for @user, :age, :integer, :autofocus => false
+    assert_select 'input.integer:not([autofocus])'
+    with_input_for @user, :born_at, :date, :autofocus => false
+    assert_select 'select.date:not([autofocus])'
+    with_input_for @user, :created_at, :datetime, :autofocus => false
+    assert_select 'select.datetime:not([autofocus])'
+
+    with_input_for @user, :name, :string
+    assert_select 'input.string:not([autofocus])'
+    with_input_for @user, :description, :text
+    assert_select 'textarea.text:not([autofocus])'
+    with_input_for @user, :age, :integer
+    assert_select 'input.integer:not([autofocus])'
+    with_input_for @user, :born_at, :date
+    assert_select 'select.date:not([autofocus])'
+    with_input_for @user, :created_at, :datetime
+    assert_select 'select.datetime:not([autofocus])'
+  end
+
   test 'input should render components according to an optional :components option' do
     with_input_for @user, :name, :string, :components => [:input, :label]
     assert_select 'input + label'
@@ -321,6 +356,12 @@ class InputTest < ActionView::TestCase
     assert_no_select 'select option[value=]', /^$/
   end
 
+  test 'priority input should not generate invalid required html attribute' do
+    with_input_for @user, :country, :country
+    assert_select 'select.required'
+    assert_no_select 'select[required]'
+  end
+
   # DateTime input
   test 'input should generate a datetime select by default for datetime attributes' do
     with_input_for @user, :created_at, :datetime
@@ -395,6 +436,12 @@ class InputTest < ActionView::TestCase
     assert_select 'label[for=project_created_at_4i]'
   end
 
+  test 'date time input should not generate invalid required html attribute' do
+    with_input_for @user, :delivery_time, :time, :required => true
+    assert_select 'select.required'
+    assert_no_select 'select[required]'
+  end
+
   # CollectionInput
   test 'input should generate boolean radio buttons by default for radio types' do
     with_input_for @user, :active, :radio
@@ -414,6 +461,13 @@ class InputTest < ActionView::TestCase
       assert_select 'label[for=user_active_true]', 'Sim'
       assert_select 'label[for=user_active_false]', 'Não'
     end
+  end
+
+  test 'input should mark the checked value when using boolean and radios' do
+    @user.active = false
+    with_input_for @user, :active, :radio
+    assert_no_select 'input[type=radio][value=true][checked]'
+    assert_select 'input[type=radio][value=false][checked]'
   end
 
   test 'input should generate a boolean select with options by default for select types' do
@@ -448,6 +502,35 @@ class InputTest < ActionView::TestCase
     @user.age = 18
     with_input_for @user, :age, :select, :collection => 18..60
     assert_select 'select option[selected=selected]', '18'
+  end
+
+  test 'input should mark the selected value when using booleans and select' do
+    @user.active = false
+    with_input_for @user, :active, :select
+    assert_no_select 'select option[selected][value=true]', 'Yes'
+    assert_select 'select option[selected][value=false]', 'No'
+  end
+
+  test 'input should set the correct value when using a collection that includes floats' do
+    with_input_for @user, :age, :select, :collection => [2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
+    assert_select 'select option[value="2.0"]'
+    assert_select 'select option[value="2.5"]'
+  end
+
+  test 'input should set the correct values when using a collection that uses mixed values' do
+    with_input_for @user, :age, :select, :collection => ["Hello Kitty", 2, 4.5, :johnny, nil, true, false]
+    assert_select 'select option[value="Hello Kitty"]'
+    assert_select 'select option[value="2"]'
+    assert_select 'select option[value="4.5"]'
+    assert_select 'select option[value="johnny"]'
+    assert_select 'select option[value=""]'
+    assert_select 'select option[value="true"]'
+    assert_select 'select option[value="false"]'
+  end
+
+  test 'input should include a blank option even if :include_blank is set to false if the collection includes a nil value' do
+    with_input_for @user, :age, :select, :collection => [nil], :include_blank => false
+    assert_select 'select option[value=""]'
   end
 
   test 'input should automatically set include blank' do
@@ -499,6 +582,22 @@ class InputTest < ActionView::TestCase
     assert_select 'label.collection_radio', 'Carlos'
   end
 
+  test 'input should allow overriding only label method for collections' do
+    with_input_for @user, :name, :radio,
+                          :collection => ['Jose' , 'Carlos'],
+                          :label_method => :upcase
+    assert_select 'label.collection_radio', 'JOSE'
+    assert_select 'label.collection_radio', 'CARLOS'
+  end
+
+  test 'input should allow overriding only value method for collections' do
+    with_input_for @user, :name, :radio,
+                          :collection => ['Jose' , 'Carlos'],
+                          :value_method => :upcase
+    assert_select 'input[type=radio][value=JOSE]'
+    assert_select 'input[type=radio][value=CARLOS]'
+  end
+
   test 'input should allow overriding label and value method for collections' do
     with_input_for @user, :name, :radio,
                           :collection => ['Jose' , 'Carlos'],
@@ -521,11 +620,48 @@ class InputTest < ActionView::TestCase
     assert_select 'label.collection_radio', 'CARLOS'
   end
 
+  test 'input should allow overriding label and value method using a lambda for collection selects' do
+    with_input_for @user, :name, :select,
+                          :collection => ['Jose' , 'Carlos'],
+                          :label_method => lambda { |i| i.upcase },
+                          :value_method => lambda { |i| i.downcase }
+    assert_select 'select option[value=jose]', "JOSE"
+    assert_select 'select option[value=carlos]', "CARLOS"
+  end
+
+  test 'input should allow overriding only label but not value method using a lambda for collection select' do
+    with_input_for @user, :name, :select,
+                          :collection => ['Jose' , 'Carlos'],
+                          :label_method => lambda { |i| i.upcase }
+    assert_select 'select option[value=Jose]', "JOSE"
+    assert_select 'select option[value=Carlos]', "CARLOS"
+  end
+
+  test 'input should allow overriding only value but not label method using a lambda for collection select' do
+    with_input_for @user, :name, :select,
+                          :collection => ['Jose' , 'Carlos'],
+                          :value_method => lambda { |i| i.downcase }
+    assert_select 'select option[value=jose]', "Jose"
+    assert_select 'select option[value=carlos]', "Carlos"
+  end
+
   test 'input should allow symbols for collections' do
     with_input_for @user, :name, :select, :collection => [:jose, :carlos]
     assert_select 'select.select#user_name'
     assert_select 'select option[value=jose]', 'jose'
     assert_select 'select option[value=carlos]', 'carlos'
+  end
+
+  test 'collection input with radio type should generate required html attribute' do
+    with_input_for @user, :name, :radio, :collection => ['Jose' , 'Carlos']
+    assert_select 'input[type=radio].required'
+    assert_select 'input[type=radio][required]'
+  end
+
+  test 'collection input with select type should not generate invalid required html attribute' do
+    with_input_for @user, :name, :select, :collection => ['Jose' , 'Carlos']
+    assert_select 'select.required'
+    assert_no_select 'select[required]'
   end
 
   # With no object
